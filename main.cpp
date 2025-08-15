@@ -57,7 +57,7 @@ bool WasEventLogCleared(HANDLE hLog) {
 
 std::vector<std::wstring> GetCrashedExecutables(HANDLE hLog, DWORD flags, size_t bufferSize) {
     std::vector<std::wstring> crashedExecutables;
-    std::set<std::wstring> seen; // Für Duplikate
+    std::set<std::wstring> seen;
     std::vector<BYTE> buffer(bufferSize);
     DWORD bytesRead = 0, bytesNeeded = 0;
     std::wregex exeRegex(LR"((?:[A-Z]:\\[^ ]*?\.exe))", std::regex_constants::icase);
@@ -73,7 +73,7 @@ std::vector<std::wstring> GetCrashedExecutables(HANDLE hLog, DWORD flags, size_t
                     std::wsmatch match;
                     if (std::regex_search(str, match, exeRegex)) {
                         std::wstring exePath = match.str();
-                        if (seen.insert(exePath).second) // Nur wenn noch nicht gesehen
+                        if (seen.insert(exePath).second)
                             crashedExecutables.push_back(exePath);
                     }
                     strings += wcslen(strings) + 1;
@@ -85,7 +85,6 @@ std::vector<std::wstring> GetCrashedExecutables(HANDLE hLog, DWORD flags, size_t
     return crashedExecutables;
 }
 
-// Ctrl+C / Ctrl+Break Handler
 BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
     if (fdwCtrlType == CTRL_C_EVENT || fdwCtrlType == CTRL_BREAK_EVENT) {
         std::wcout << L"\nCtrl+C / Ctrl+Break pressed, ignored.\n";
@@ -95,13 +94,10 @@ BOOL WINAPI CtrlHandler(DWORD fdwCtrlType) {
 }
 
 int wmain() {
-    // Set console title
     SetConsoleTitleW(L"Eventlog Crashed Tool by onexions");
 
-    // Ctrl+C abfangen
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
 
-    // Admin Check
     if (!IsUserAnAdmin()) {
         std::wcerr << L"[ERROR] This program must be run with administrator rights.\n";
         return 1;
@@ -156,7 +152,6 @@ int wmain() {
 
     std::wcout << L"\nPress any key to exit...";
 
-    // Warte auf einen Tastendruck, aber ignoriere Ctrl und Ctrl+C
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode = 0;
     GetConsoleMode(hStdin, &mode);
@@ -167,22 +162,21 @@ int wmain() {
     do {
         ReadConsoleInput(hStdin, &inputRecord, 1, &eventsRead);
 
-        // Prüfe, ob es ein KeyEvent ist und die Taste gedrückt wurde
         if (inputRecord.EventType == KEY_EVENT && inputRecord.Event.KeyEvent.bKeyDown) {
             WORD vk = inputRecord.Event.KeyEvent.wVirtualKeyCode;
             DWORD ctrlState = inputRecord.Event.KeyEvent.dwControlKeyState;
 
-            // Ignoriere Strg, Strg+C, Tab und Windows-Tasten
             if ((vk == VK_CONTROL) ||
                 (vk == 'C' && (ctrlState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))) ||
                 (vk == VK_TAB) ||
                 (vk == VK_LWIN) ||
                 (vk == VK_RWIN)) {
-                continue; // Schleife fortsetzen, Programm bleibt offen
+                continue;
             }
-            break; // Bei allen anderen Tasten beenden
+            break;
         }
     } while (true);
 
     return 0;
 }
+
