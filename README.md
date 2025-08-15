@@ -13,6 +13,14 @@ A Windows tool to collect and analyze crashed executables from the Application E
 - Handles Ctrl+C / Ctrl+Break gracefully.
 - Requires administrator rights.
 
+## Safety & VirusTotal Scan
+
+All files collected by this tool have been scanned with [VirusTotal](https://www.virustotal.com/gui/file/9f3e9c08d8507a9dc6c5545ddd5864b9673b33c8281c9357d67fc26bd64a82cc/detection) to ensure they are safe.  
+This tool itself has also been tested and shows **no detection** on VirusTotal.
+
+- You can verify by uploading the `EventlogCrashedTool.exe` or any collected executables to VirusTotal yourself.
+- No system files are modified; the tool only reads event logs and file metadata.
+  
 ## Usage
 
 1. Run the program as Administrator.
