@@ -41,7 +41,7 @@ Requires:
 Compile with:
 
 ```bash
-g++ -O2 -Wall -std=c++17 -municode -mconsole main.cpp -o MyProgram.exe -ladvapi32 -lwintrust -s`
+g++ -O2 -Wall -std=c++17 -municode -mconsole main.cpp -o MyProgram.exe -ladvapi32 -lwintrust -s
 ```
 
 (.md made by chatgpt)
