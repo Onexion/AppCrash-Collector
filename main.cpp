@@ -9,6 +9,9 @@
 #include <filesystem>
 #include <shlobj.h>
 #include <regex>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
 
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "wintrust.lib")
@@ -55,8 +58,26 @@ bool WasEventLogCleared(HANDLE hLog) {
     return false;
 }
 
-std::vector<std::wstring> GetCrashedExecutables(HANDLE hLog, DWORD flags, size_t bufferSize) {
-    std::vector<std::wstring> crashedExecutables;
+std::wstring RelativeTime(DWORD eventTime) {
+    using namespace std::chrono;
+    auto now = system_clock::to_time_t(system_clock::now());
+    auto diff = now - eventTime;
+
+    if (diff < 60 * 60 * 24) return L"today";
+    if (diff < 60 * 60 * 48) return L"yesterday";
+    if (diff < 60 * 60 * 24 * 7) return L"this week";
+    if (diff < 60 * 60 * 24 * 30) return L"this month";
+    if (diff < 60 * 60 * 24 * 365) return L"this year";
+    return L"long ago";
+}
+
+struct CrashInfo {
+    std::wstring exePath;
+    DWORD timeGenerated;
+};
+
+std::vector<CrashInfo> GetCrashedExecutables(HANDLE hLog, DWORD flags, size_t bufferSize) {
+    std::vector<CrashInfo> crashedExecutables;
     std::set<std::wstring> seen;
     std::vector<BYTE> buffer(bufferSize);
     DWORD bytesRead = 0, bytesNeeded = 0;
@@ -74,7 +95,7 @@ std::vector<std::wstring> GetCrashedExecutables(HANDLE hLog, DWORD flags, size_t
                     if (std::regex_search(str, match, exeRegex)) {
                         std::wstring exePath = match.str();
                         if (seen.insert(exePath).second)
-                            crashedExecutables.push_back(exePath);
+                            crashedExecutables.push_back({ exePath, record->TimeGenerated });
                     }
                     strings += wcslen(strings) + 1;
                 }
@@ -124,27 +145,65 @@ int wmain() {
     auto crashedExecutables = GetCrashedExecutables(hLog, flags, bufferSize);
 
     size_t maxPathLength = 0;
-    for (const auto& exe : crashedExecutables) {
-        if (exe.length() > maxPathLength)
-            maxPathLength = exe.length();
+    for (const auto& info : crashedExecutables) {
+        if (info.exePath.length() > maxPathLength)
+            maxPathLength = info.exePath.length();
     }
     size_t colStart = maxPathLength + 5;
+
+    const int statusWidth = 8;   // "Present"/"Deleted"
+    const int signWidth = 9;     // "Signed"/"Unsigned"/"-"
+    const int timeWidth = 12;    // "today"/"yesterday"/...
+
+    size_t neededWidth = colStart + statusWidth + 3 + signWidth + 3 + timeWidth + 1;
+
+    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(hConsole, &csbi)) {
+        SHORT currentWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        if (neededWidth > currentWidth) {
+            COORD newSize = csbi.dwSize;
+            newSize.X = static_cast<SHORT>(neededWidth);
+            SetConsoleScreenBufferSize(hConsole, newSize);
+
+            SMALL_RECT newRect = csbi.srWindow;
+            newRect.Right = newRect.Left + static_cast<SHORT>(neededWidth) - 1;
+            SetConsoleWindowInfo(hConsole, TRUE, &newRect);
+        }
+    }
 
     if (crashedExecutables.empty()) {
         std::wcout << L"[INFO] No crashed executables found.\n";
     } else {
         std::wcout << L"\nCrashed executables (newest first):\n";
-        for (const auto& exe : crashedExecutables) {
-            bool exists = std::filesystem::exists(exe);
-            bool signedFile = exists && IsFileSigned(exe);
+        for (const auto& info : crashedExecutables) {
+            bool exists = std::filesystem::exists(info.exePath);
+            bool signedFile = exists && IsFileSigned(info.exePath);
 
-            std::wcout << exe;
+            std::wcout << std::left << std::setw(static_cast<int>(colStart))
+                << info.exePath;
 
-            if (exe.length() < colStart)
-                std::wcout << std::wstring(colStart - exe.length(), L' ');
+            if (!exists) {
+                SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_INTENSITY);
+                std::wcout << std::left << std::setw(statusWidth) << L"Deleted";
+                SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+            } else {
+                std::wcout << std::left << std::setw(statusWidth) << L"Present";
+            }
+            std::wcout << " | ";
 
-            std::wcout << (exists ? L"Present" : L"Deleted") << " | ";
-            std::wcout << (exists ? (signedFile ? L"Signed" : L"Unsigned") : L"-") << "\n";
+            std::wstring signStr = exists ? (signedFile ? L"Signed" : L"Unsigned") : L"-";
+            if (signStr == L"Unsigned") {
+                SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_INTENSITY);
+                std::wcout << std::left << std::setw(signWidth) << signStr;
+                SetConsoleTextAttribute(hConsole, FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+            } else {
+                std::wcout << std::left << std::setw(signWidth) << signStr;
+            }
+            std::wcout << " | ";
+
+            std::wcout << std::left << std::setw(timeWidth)
+                << RelativeTime(info.timeGenerated) << "\n";
         }
     }
 
@@ -179,4 +238,3 @@ int wmain() {
 
     return 0;
 }
-
